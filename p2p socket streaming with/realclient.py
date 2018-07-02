@@ -1,6 +1,7 @@
 import speech_recognition
 import cv2
 from threading import Thread
+from threading import Lock
 import socket
 import tkinter
 import time
@@ -9,7 +10,11 @@ from PIL import Image
 from functools import partial
 import numpy as np
 from tkinter import *
-b=''
+import tkinter.messagebox
+from random import randint
+
+lock = Lock()
+DANMU=list()
 a=''
 
 class menu:
@@ -102,7 +107,7 @@ class menu:
         HOST,PORT = "104.199.242.20",port
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.connect((HOST, PORT))
-        print("reconnecting")
+        print("reconnecting...")
 
 
     def servicerequest(self,friend):
@@ -117,7 +122,8 @@ class menu:
             
             sentence = self.type.get()
             self.text.insert(INSERT,"You:"+ sentence +"\n")
-            self.textclient.sendall( str.encode( sentence ) )            
+            self.textclient.sendall( str.encode( sentence ) )
+            self.type['text']=''
             print(sentence)
         
         self.chat = tkinter.Tk()
@@ -132,11 +138,12 @@ class menu:
 
             while 1:
 
-                global b
+                global DANMU
                 sentence = self.ttclient.recv(1024).decode()
-                b = sentence
+                DANMU.append([sentence,0,randint(100,400)])
+                        
                 print(sentence)
-                
+
                 self.text.insert(INSERT , "object:"+ sentence +"\n")
         
         Thread(target = recvtext).start()
@@ -152,6 +159,8 @@ class menu:
 
             message = self.s.recv(1024).decode()                                                #一方先當server做p2p連線
             print(message)
+
+            tkinter.messagebox.askquestion("DX"," a r e  y o u  s u r e    D: ?")
                 
             if message == 'client':
 
@@ -286,6 +295,7 @@ class menu:
                 
         def recvideo():
 
+            global lock
             kernel = np.array([[0,-1,0], [-1,5,-1], [0,-1,0]])
             i=0
             minute=0
@@ -294,7 +304,6 @@ class menu:
             sliding = 0                                                                 #彈幕滑動
 
             while 1:                                                                    #讀取對方的視訊
-
                      
                 data = self.ssclient.recv(3000000)
                 
@@ -304,7 +313,8 @@ class menu:
                         f.write(data)
 
                     try:
-                        global b
+                        
+                        global frame
                         frame = cv2.imread('save.jpg')
                         #frame = cv2.medianBlur(frame, 5)  
                         #frame = cv2.filter2D(frame, -1, kernel)
@@ -312,20 +322,20 @@ class menu:
                         minute = int (counter/60)
                         sec = int (counter%60)
 
-                        cv2.putText(frame, b, (250-sliding,200), cv2.FONT_HERSHEY_SIMPLEX,2,(34,195,46),1, cv2.LINE_AA)
+                        for e in DANMU:
+        
+                            e[1] += 10
+                            cv2.putText(frame, e[0], (550-e[1],e[2]), cv2.FONT_HERSHEY_SIMPLEX,2,(34,195,46),1, cv2.LINE_AA)
+
+                            if e[1] == 550:
+                                DANMU.pop(0)
+
                         cv2.putText(frame, str(minute) + ':' + str(sec), (0,86), cv2.FONT_HERSHEY_SIMPLEX,2,(34,195,46),1, cv2.LINE_AA)
                         cv2.putText(frame, str(i), (0,40), cv2.FONT_HERSHEY_SIMPLEX,2,(34,195,46),1, cv2.LINE_AA)
-
-                        if sliding == 250:
-
-                            
-                            b=''
-                            sliding = 0
                         
                         cv2.imshow('hi',frame)                                          #顯示畫面
 
                         i+=1
-                        sliding += 5
                         
                         if cv2.waitKey(1) & 0xFF == ord('q'):
                             break
@@ -345,8 +355,6 @@ class menu:
         Thread(target = recvideo).start()
         Thread(target = recognition).start()                                            #語音辨識
 
-
-    
 
     def exitquit(self):
 
