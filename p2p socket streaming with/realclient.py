@@ -8,6 +8,8 @@ import pickle
 from PIL import Image
 from functools import partial
 import numpy as np
+from tkinter import *
+b=''
 a=''
 
 class menu:
@@ -105,7 +107,43 @@ class menu:
 
     def servicerequest(self,friend):
         
-        self.s.sendall(str.encode(friend))                                                           #發送目標好友名        
+        self.s.sendall(str.encode(friend))                                                           #發送目標好友名
+        
+
+    def chatroom(self):
+        
+
+        def sndtext():
+            
+            sentence = self.type.get()
+            self.text.insert(INSERT,"You:"+ sentence +"\n")
+            self.textclient.sendall( str.encode( sentence ) )            
+            print(sentence)
+        
+        self.chat = tkinter.Tk()
+        self.text=Text(self.chat)
+        self.text.pack()
+        self.type = tkinter.Entry(self.chat , font=('',14) )
+        self.type.pack()
+        self.send = tkinter.Button(self.chat , command = sndtext , text = "Send" ,  fg="blue" , font=('Arial',20) )
+        self.send.pack()
+
+        def recvtext():
+
+            while 1:
+
+                global b
+                sentence = self.ttclient.recv(1024).decode()
+                b = sentence
+                print(sentence)
+                
+                self.text.insert(INSERT , "object:"+ sentence +"\n")
+        
+        Thread(target = recvtext).start()
+        
+        self.chat.mainloop()
+
+        
 
 
     def waiting(self):
@@ -119,23 +157,29 @@ class menu:
 
                 self.clientport = 11111
                 self.serverport = 22222
+                self.tclientport = 33333
+                self.tserverport = 44444
                 self.ip = self.s.recv(1024).decode()                                            #收到目標ip
                 print(self.ip)
                 self.ptopclient()
                 self.ptopserver()
                 self.video()
+                self.chatroom()
                 break
                     
             elif message == 'server':
 
                 self.clientport = 22222
                 self.serverport = 11111
+                self.tclientport = 44444
+                self.tserverport = 33333
                 self.ip = self.s.recv(1024).decode()                                            #收到目標ip
                 print(self.ip)
                 self.ptopserver()
                 print('server open!')
                 self.ptopclient()
                 self.video()
+                self.chatroom()
                 break
 
             else:
@@ -146,55 +190,63 @@ class menu:
 
     def ptopserver(self):                                                                       #開啟接收端
 
-        HOST,PORT = "",self.serverport
         self.pserver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.pserver.bind((HOST,PORT))
+        self.pserver.bind(("",self.serverport))
         self.pserver.listen(5)
         self.ssclient , address = self.pserver.accept()
-        print(address)
-
+        print(str(address) +"has connect")
+        
+        self.textserver =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.textserver.bind(("",self.tserverport))
+        self.textserver.listen(5)
+        self.ttclient , address = self.textserver.accept()
+        print("text requested")
+        
                 
     def ptopclient(self):                                                                       #開啟傳送端
 
-        HOST,PORT = self.ip,self.clientport
         self.pclient = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.pclient.connect((HOST,PORT))
-        print('ptopconnect')
+        self.pclient.connect((self.ip,self.clientport))
+        print('ptopconnect to ')
+
+        self.textclient = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.textclient.connect((self.ip,self.tclientport))
+        print("text connected")
         
+                
 
     def video(self):                                                                            #streaming
 
         
         
         def sndvideo():                                                                         #傳
-            
+
+            global a
             cap = cv2.VideoCapture(0)
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH,400)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT,400)
-            i=0
-            minute=0
-            sec=0
-            clock = time.time()                                                               #計時
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH,450)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT,450)
+                                                                           
             resolution = 0                                                                      #解析度變數
             dev = 0
             estimate = 0.1                                                                      #設定的標準傳送秒數
             add = 0                                                                             #隨網路速度做視訊大小增減的變數(連續3包)
             sub = 0
+            count = 0
             
             while cap.isOpened():
                 
                 ret, frame = cap.read()
-                frame = cv2.medianBlur(frame, 5)                                            #影像處理 ,平滑
-                kernel = np.array([[0,-1,0], [-1,5,-1], [0,-1,0]])                          #銳化kernel
-                frame = cv2.filter2D(frame, -1, kernel)
-                counter = time.time()-clock
-                minute = int(counter/60)
-                sec = int(counter%60)
                 
+                cv2.putText(frame, a, (100,250), cv2.FONT_HERSHEY_SIMPLEX,1,(0,71,171),2, cv2.LINE_AA)             
+                cv2.imwrite('buffer.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY, 25])
 
-                cv2.putText(frame, str(i), (0,50), cv2.FONT_HERSHEY_SIMPLEX,1,(34,195,46),1, cv2.LINE_AA)
-                cv2.putText(frame, a, (100,250), cv2.FONT_HERSHEY_SIMPLEX,1,(34,195,46),1, cv2.LINE_AA)             
-                cv2.imwrite('buffer.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY, 22])
+                if count > 30:
+                    count = 0
+                    a=''
+
+                else:
+
+                    count+=1
                                 
                 try:
                     
@@ -209,14 +261,14 @@ class menu:
                     #dev = (1-0.25)*dev + 0.25*abs(sample - estimate)
                     timeout = estimate +4*dev
 
-                    if sample < timeout - 0.05:                                                 #隨著偵測網路速度做視訊大小調整
+                    '''if sample < timeout - 0.07:                                                 #隨著偵測網路速度做視訊大小調整
                         add +=1
                         if(add >=5):
                             resolution += 10
                             cap.set(cv2.CAP_PROP_FRAME_WIDTH,400+resolution)
                             cap.set(cv2.CAP_PROP_FRAME_HEIGHT,400+resolution)
 
-                    elif sample > timeout + 0.05:                                               #隨著網路速度做視訊大小調整
+                    elif sample > timeout + 0.07:                                               #隨著網路速度做視訊大小調整
                         sub += 1
                         if(sub >=5):
                             resolution -= 10
@@ -225,9 +277,8 @@ class menu:
 
                     else:
                         add =0
-                        sub =0
+                        sub =0'''
                                        
-                    i+=1
                     
                 except:
                     pass
@@ -235,8 +286,16 @@ class menu:
                 
         def recvideo():
 
+            kernel = np.array([[0,-1,0], [-1,5,-1], [0,-1,0]])
+            i=0
+            minute=0
+            sec=0
+            clock = time.time()                                                         #計時
+            sliding = 0                                                                 #彈幕滑動
+
             while 1:                                                                    #讀取對方的視訊
-     
+
+                     
                 data = self.ssclient.recv(3000000)
                 
                 try:                                                                    #將接收的RGB陣列寫到jpg檔中再打開
@@ -245,8 +304,29 @@ class menu:
                         f.write(data)
 
                     try:
+                        global b
+                        frame = cv2.imread('save.jpg')
+                        #frame = cv2.medianBlur(frame, 5)  
+                        #frame = cv2.filter2D(frame, -1, kernel)
+                        counter = int (time.time()-clock)
+                        minute = int (counter/60)
+                        sec = int (counter%60)
+
+                        cv2.putText(frame, b, (250-sliding,200), cv2.FONT_HERSHEY_SIMPLEX,2,(34,195,46),1, cv2.LINE_AA)
+                        cv2.putText(frame, str(minute) + ':' + str(sec), (0,86), cv2.FONT_HERSHEY_SIMPLEX,2,(34,195,46),1, cv2.LINE_AA)
+                        cv2.putText(frame, str(i), (0,40), cv2.FONT_HERSHEY_SIMPLEX,2,(34,195,46),1, cv2.LINE_AA)
+
+                        if sliding == 250:
+
+                            
+                            b=''
+                            sliding = 0
                         
-                        cv2.imshow('hi',cv2.imread('save.jpg'))                         #顯示畫面
+                        cv2.imshow('hi',frame)                                          #顯示畫面
+
+                        i+=1
+                        sliding += 5
+                        
                         if cv2.waitKey(1) & 0xFF == ord('q'):
                             break
                             
@@ -266,8 +346,7 @@ class menu:
         Thread(target = recognition).start()                                            #語音辨識
 
 
-    def text(self):
-        pass
+    
 
     def exitquit(self):
 
